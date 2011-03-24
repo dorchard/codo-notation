@@ -20,6 +20,10 @@
 >                           expr <- (parseExpr parse) pos input
 >                           dataToExpQ (const Nothing `extQ` interpret) expr
 
+> pair :: (a -> b, a -> c) -> a -> (b, c)
+> pair (f, g) = \x -> (f x, g x)
+
+
 > codo :: QuasiQuoter
 > codo = QuasiQuoter { quoteExp = interpretBlock parseBlock interpretCoDo,
 >                      quotePat = (\_ -> wildP) --,
@@ -27,24 +31,17 @@
 >                       -- quoteDec = undefined
 >                     }
 
-> pair :: (a -> b, a -> c) -> a -> (b, c)
-> pair (f, g) = \x -> (f x, g x)
+> mkProjBind :: String -> ExpQ -> DecQ
+> mkProjBind var prj = valD (varP $ mkName var) (normalB ([| $(free "cmap") $(prj) $(free "gamma") |])) []
 
-> cross :: (a -> c) -> (b -> d) -> (a, b) -> (c, d)
-> cross f g (x, y) = (f x, g y)
+> projs :: [String] -> [DecQ]
+> projs x = projs' x [| id |]
 
-> recursiveTuples [v] = varP $ mkName v
-> recursiveTuples [v,v'] = tupP [varP $ mkName v, varP $ mkName v']
-> recursiveTuples (v:vs) = tupP [varP $ mkName v, recursiveTuples vs]
-
-> recursiveUnpack [_] = [| id |]
-> recursiveUnpack (_:vs) = [| $(unpackN (length (vs) + 1)) . $(recursiveUnpack vs) |]
-
-> m_op = [| \s -> ($(free "cmap") fst s, $(free "cmap") snd s) |]
-
-> unpackN 1 = [| id |]
-> unpackN 2 = [| $(m_op) |]
-> unpackN n = [| (id `cross` $(unpackN (n-1))) |]
+> projs' :: [String] -> ExpQ -> [DecQ]
+> projs' [] _ = []
+> projs' [x] l = [valD (varP $ mkName x) (normalB [| $(free "gamma") |]) []]
+> projs' [x, y] l = [mkProjBind x [| fst . $(l) |], mkProjBind y [| snd . $(l) |]]
+> projs' (x:xs) l = (mkProjBind x [| fst . $(l) |]):(projs' xs [| $(l) . snd |])
 
 > interpretCoDo :: Block -> Maybe (Q Exp)
 > interpretCoDo (Block var binds) =
@@ -54,19 +51,23 @@
 > interpretCobinds (EndExpr exp) binders =
 >      case parseToTH exp of
 >             Left x -> error x
->             Right exp' -> do let pattern = recursiveTuples binders
->                              Just $ [| $(lamE [pattern] (return exp')) . $(recursiveUnpack binders) |]
+>             Right exp' -> Just $ (lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp')))
 > interpretCobinds (Bind var exp binds) binders = 
 >      case parseToTH exp of
 >         Left x -> error x
 >         Right exp' ->
 >             do 
 >                let binders' = var:binders
->                let pattern = recursiveTuples binders
->                let coKleisli = [| $(lamE [pattern] (return exp')) . $(recursiveUnpack binders) |]
+>                let coKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
 >                inner <- (interpretCobinds binds binders')
->                return [| $(inner) . ($(free "coextend") (pair ($(coKleisli), $(free "coreturn")))) |]
+>                return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]
 
+
+ bind :: Monad m => (a -> m b) -> m a -> m b
+ bind = flip (>>=)
+
+ mstrength :: Monad m => (a, m b) -> m (a, b)
+ mstrength (a, mb) = mb >>= (\b -> return (a, b))
 
  bido :: QuasiQuoter
  bido = QuasiQuoter { quoteExp = interpretBlock parseBlock interpretBiDo,
@@ -77,23 +78,26 @@
 
  interpretBiDo :: Block -> Maybe (Q Exp)
  interpretBiDo (Block var binds) = 
-     do inner <- interpretBiBinds binds var
+     do (inner,_) <- interpretBiBinds binds [var]
         Just $ lamE [varP $ mkName var] inner
 
- interpretBiBinds :: Binds -> Variable -> Maybe (Q Exp)
- interpretBiBinds (EndExpr exp) _ =
+ interpretBiBinds :: Binds -> [Variable] -> Maybe (Q Exp)
+
+ interpretBiBinds (EndExpr exp) binders =
      case parseToTH exp of
             Left x -> error x
-            Right exp' -> Just $ return exp'
- interpretBiBinds (Bind var exp binds) outerVar =
+            Right exp' -> Just $ (lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp')))
+
+ interpretBiBinds (Bind var exp binds) binders =
      case parseToTH exp of
         Left x -> error x
         Right exp' ->
-            do let biKleisli = lamE [varP $ mkName outerVar] (return exp')
-               inner <- (interpretBiBinds binds var)
-               let remaining = lamE [varP $ mkName var] inner
-               return [| (($(free "fmap") $(free "counit")) .
-                         ($(free "biextend") $(remaining)) .
-                         ($(free "biextend") $(biKleisli)) .
-                         ($(free "return"))) $(free outerVar) |]
+            do let binders' = var:binders
+               let biKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
+               (inner, rest) <- (interpretBiBinds binds binders')
+               return [| ($(rest)) .
+                         ($(free "bind") $(inner)) .
+                         ($(free "dist")) .
+                         ($(free "cmap") $(free "mstrength")) .
+                         ($(free "cobind") (pair ($(biKleisli), $(free "coreturn")))) |]
 

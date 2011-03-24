@@ -1,6 +1,8 @@
 > {-# LANGUAGE QuasiQuotes #-}
 > {-# LANGUAGE NoMonomorphismRestriction #-}
 
+> -- KNOWN TO WORK IN GHC-6.12 
+
 > import Language.Haskell.SyntacticSugar
 > import Prelude hiding (odd, const)
 
@@ -10,11 +12,11 @@
 >     coreturn :: c a -> a
 >     (=>>) :: c a -> (c a -> b) -> c b
 
-> coextend :: Comonad c => (c a -> b) -> c a -> c b
-> coextend = flip (=>>)
+> cobind :: Comonad c => (c a -> b) -> c a -> c b
+> cobind = flip (=>>)
 
 > cmap :: Comonad c => (a -> b) -> c a -> c b
-> cmap f = coextend (f . coreturn)
+> cmap f = cobind (f . coreturn)
 
 > data Stream a = Stream (Int -> a) Int
 
@@ -39,11 +41,11 @@
 > const :: a -> Stream a
 > const x = Stream (\_ -> x) 0
 
-> class Comonad c => CoextendFix c where
+> class Comonad c => CFix c where
 >     cfix :: (c a -> a) -> c a
 
-> instance CoextendFix Stream where
->     cfix f = let (Stream s _) = coextend f (Stream s 0)
+> instance CFix Stream where
+>     cfix f = let (Stream s _) = cobind f (Stream s 0)
 >              in (Stream s 0)
 
 > n :: Num a => Stream a
@@ -55,3 +57,4 @@
 >                         fibn1 <- fby (const 1) fibn2
 >                         fibn0 <- fby (const 0) fibn1
 >                         coreturn fibn0 |]
+

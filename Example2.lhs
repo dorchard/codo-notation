@@ -44,10 +44,6 @@
 >                          vals <- mapM f (range (b1, b2))
 >                          return $ Arr (listArray (b1, b2) vals) i
 
-> bibind, biextend :: (Comonad c, Monad m, Dist c m) => (c a -> m b) -> m (c a) -> m (c b)
-> bibind f = bind (dist . (cobind f))
-> biextend = bibind
-
 > access :: Ix i => Arr i a -> i -> Maybe a
 > access (Arr arr _) i = let (b1, b2) = bounds arr
 >                        in if (i<b1 || i>b2) then
@@ -74,19 +70,3 @@
 >                     return $ 2*(coreturn c)|]
 
 > arrA_success = dist (cobind double arrA)
-
-> -- bido2 may be optimised better by GHC
-
-> laplace1D_fail' :: (Ix i, Num i, Num a) => Arr i a -> Maybe a
-> laplace1D_fail' = [$bido2|(a) c <- access a (cursor a)
->                             l <- access a (cursor a - 1)
->                             r <- access a (cursor a + 1)
->                             return $ (coreturn l) + (coreturn r) - 2*(coreturn c)|]
-
-> double' :: (Ix i, Num i, Num a) => Arr i a -> Maybe a
-> double' = [$bido2|(a) c <- access a (cursor a)                            
->                      return $ 2*(coreturn c)|]
-
-> arrA_fail' = dist (cobind laplace1D_fail' arrA)
-
-> arrA_success' = dist (cobind double' arrA)

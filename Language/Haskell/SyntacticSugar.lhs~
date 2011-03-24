@@ -1,0 +1,47 @@
+> {-# LANGUAGE TemplateHaskell #-}
+
+> module Language.Haskell.SyntacticSugar where
+
+> import Language.Haskell.SyntacticSugar.Parse
+> import Language.Haskell.TH 
+> import Language.Haskell.TH.Quote
+> import Language.Haskell.SyntaxTrees.ExtsToTH
+> import Data.Generics
+
+> codo :: QuasiQuoter
+> codo = QuasiQuoter { quoteExp = interpretBlock,
+>                      quotePat = (\_ -> wildP) --,
+>                       -- quoteType = undefined,
+>                       -- quoteDec = undefined
+>                     }
+
+> interpretBlock :: String -> Q Exp
+> interpretBlock input = do loc <- location
+>                           let pos = (loc_filename loc,
+>                                      fst (loc_start loc), 
+>                                      snd (loc_start loc))
+>                           expr <- (parseExpr parseCoDo) pos input
+>                           dataToExpQ (const Nothing `extQ` interpret) expr
+
+> interpret :: CoDoBlock -> Maybe (Q Exp)
+> interpret (CoDoBlock var cobinds) =
+>     do inner <- interpretCobinds cobinds var
+>        Just $ lamE [varP $ mkName var] inner
+>        --Just inner
+
+> interpretCobinds :: CoBinds -> Variable -> Maybe (Q Exp)
+> interpretCobinds (EndExpr exp) _ =
+>      case parseToTH exp of
+>             Left x -> error x
+>             Right exp' -> Just $ return exp'
+> interpretCobinds (CoBind var exp cobinds) outerVar = 
+>      case parseToTH exp of
+>         Left x -> error x
+>         Right exp' ->
+>             do let coKleisli = lamE [varP $ mkName outerVar] (return exp')
+>                inner <- (interpretCobinds cobinds var)
+>                let remaining = lamE [varP $ mkName var] inner -- (appE inner (varE $ mkName var))
+>                return [| ($(remaining) . ($(varE $ mkName "coextend") $(coKleisli)))  $(varE $ mkName outerVar) |]
+
+
+

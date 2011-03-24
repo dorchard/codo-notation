@@ -63,41 +63,49 @@
 >                return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]
 
 
- bind :: Monad m => (a -> m b) -> m a -> m b
- bind = flip (>>=)
+> -- Derive a bunch of combinators that we need
 
- mstrength :: Monad m => (a, m b) -> m (a, b)
- mstrength (a, mb) = mb >>= (\b -> return (a, b))
+> bind :: Monad m => (a -> m b) -> m a -> m b
+> bind = flip (>>=)
 
- bido :: QuasiQuoter
- bido = QuasiQuoter { quoteExp = interpretBlock parseBlock interpretBiDo,
-                      quotePat = (\_ -> wildP) --,
-                       -- quoteType = undefined,
-                       -- quoteDec = undefined
-                     }
+> mstrength :: Monad m => (a, m b) -> m (a, b)
+> mstrength (a, mb) = mb >>= (\b -> return (a, b))
 
- interpretBiDo :: Block -> Maybe (Q Exp)
- interpretBiDo (Block var binds) = 
-     do (inner,_) <- interpretBiBinds binds [var]
-        Just $ lamE [varP $ mkName var] inner
+> mstrength' :: Monad m => (m a, b) -> m (a, b)
+> mstrength' (ma, b) = ma >>= (\a -> return (a, b))
 
- interpretBiBinds :: Binds -> [Variable] -> Maybe (Q Exp)
+> -- We use biextension as it is more basic than composition
 
- interpretBiBinds (EndExpr exp) binders =
-     case parseToTH exp of
-            Left x -> error x
-            Right exp' -> Just $ (lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp')))
+> bido :: QuasiQuoter
+> bido = QuasiQuoter { quoteExp = interpretBlock parseBlock interpretBiDo,
+>                      quotePat = (\_ -> wildP) --,
+>                       -- quoteType = undefined,
+>                       -- quoteDec = undefined
+>                     }
 
- interpretBiBinds (Bind var exp binds) binders =
-     case parseToTH exp of
-        Left x -> error x
-        Right exp' ->
-            do let binders' = var:binders
-               let biKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
-               (inner, rest) <- (interpretBiBinds binds binders')
-               return [| ($(rest)) .
-                         ($(free "bind") $(inner)) .
-                         ($(free "dist")) .
-                         ($(free "cmap") $(free "mstrength")) .
-                         ($(free "cobind") (pair ($(biKleisli), $(free "coreturn")))) |]
+> interpretBiDo :: Block -> Maybe (Q Exp)
+> interpretBiDo (Block var binds) = 
+>     do inner <- interpretBiBinds binds [var]
+>        Just $ lamE [varP $ mkName var] [| (($(free "fmap") $(free "coreturn")) .
+>                                            $(inner) . ($(free "return"))) $(free var) |]
+
+> interpretBiBinds :: Binds -> [Variable] -> Maybe (Q Exp)
+
+> interpretBiBinds (EndExpr exp) binders =
+>     case parseToTH exp of
+>        Left x -> error x
+>        Right exp' ->
+>             do let biKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
+>                return [| $(free "bibind") $(biKleisli) |]
+
+> interpretBiBinds (Bind var exp binds) binders =
+>     case parseToTH exp of
+>        Left x -> error x
+>        Right exp' ->
+>             do let binders' = var:binders
+>                let biKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
+>                inner <- (interpretBiBinds binds binders')
+>                return [| ($(inner)) .
+>                          ($(free "bibind") ($(free "mstrength'") .
+>                                             (pair ($(biKleisli), $(free "coreturn"))))) |]
 

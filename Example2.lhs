@@ -35,7 +35,6 @@
 >                            arr' = array (b1, b2) es
 >                       in
 >                            Arr arr' i
-
 > class Dist c m where
 >    dist :: c (m a) -> m (c a)
 
@@ -44,6 +43,10 @@
 >                          let f = (\c' -> coreturn (Arr arr c'))
 >                          vals <- mapM f (range (b1, b2))
 >                          return $ Arr (listArray (b1, b2) vals) i
+
+> bibind, biextend :: (Comonad c, Monad m, Dist c m) => (c a -> m b) -> m (c a) -> m (c b)
+> bibind f = bind (dist . (cobind f))
+> biextend = bibind
 
 > access :: Ix i => Arr i a -> i -> Maybe a
 > access (Arr arr _) i = let (b1, b2) = bounds arr
@@ -55,7 +58,7 @@
 > cursor :: Arr i a -> i
 > cursor (Arr arr i) = i
 
-> laplace1D_fail :: Arr i a -> Maybe a
+> laplace1D_fail :: (Ix i, Num i, Num a) => Arr i a -> Maybe a
 > laplace1D_fail = [$bido|(a) c <- access a (cursor a)
 >                             l <- access a (cursor a - 1)
 >                             r <- access a (cursor a + 1)
@@ -64,4 +67,4 @@
 > arrA :: Arr Int Int
 > arrA = Arr (array (0, 10) (map (\i -> (i, i*2)) [0..10])) 0
 
-> arrA_fail = dist (cobind laplace1D_fail (Just arrA))
+> arrA_fail = dist (cobind laplace1D_fail arrA)

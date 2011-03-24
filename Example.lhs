@@ -1,14 +1,4 @@
- {-# LANGUAGE MultiParamTypeClasses #-}
- {-# LANGUAGE FlexibleInstances #-}
- {-# LANGUAGE FlexibleContexts #-}
- {-# LANGUAGE UndecidableInstances #-}
-
 > {-# LANGUAGE QuasiQuotes #-}
-
- {-# LANGUAGE TypeSynonymInstances #-} 
-
- {-# LANGUAGE EmptyDataDecls #-}
-
 > {-# LANGUAGE NoMonomorphismRestriction #-}
 
 > import Language.Haskell.SyntacticSugar

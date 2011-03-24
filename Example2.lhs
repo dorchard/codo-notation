@@ -50,7 +50,7 @@
 
 > access :: Ix i => Arr i a -> i -> Maybe a
 > access (Arr arr _) i = let (b1, b2) = bounds arr
->                        in if (i<b1 || i>=b2) then
+>                        in if (i<b1 || i>b2) then
 >                               Nothing
 >                           else
 >                               Just (arr!i)
@@ -68,3 +68,25 @@
 > arrA = Arr (array (0, 10) (map (\i -> (i, i*2)) [0..10])) 0
 
 > arrA_fail = dist (cobind laplace1D_fail arrA)
+
+> double :: (Ix i, Num i, Num a) => Arr i a -> Maybe a
+> double = [$bido|(a) c <- access a (cursor a)                            
+>                     return $ 2*(coreturn c)|]
+
+> arrA_success = dist (cobind double arrA)
+
+> -- bido2 may be optimised better by GHC
+
+> laplace1D_fail' :: (Ix i, Num i, Num a) => Arr i a -> Maybe a
+> laplace1D_fail' = [$bido2|(a) c <- access a (cursor a)
+>                             l <- access a (cursor a - 1)
+>                             r <- access a (cursor a + 1)
+>                             return $ (coreturn l) + (coreturn r) - 2*(coreturn c)|]
+
+> double' :: (Ix i, Num i, Num a) => Arr i a -> Maybe a
+> double' = [$bido2|(a) c <- access a (cursor a)                            
+>                      return $ 2*(coreturn c)|]
+
+> arrA_fail' = dist (cobind laplace1D_fail' arrA)
+
+> arrA_success' = dist (cobind double' arrA)

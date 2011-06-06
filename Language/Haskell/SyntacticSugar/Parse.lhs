@@ -13,7 +13,8 @@
 > type Variable = String
 > type HaskExp = String
 
-> data Binds = Bind Variable HaskExp Binds | EndExpr HaskExp
+> data Binds = Bind Variable HaskExp Binds | WildBind HaskExp Binds |
+>              LetBind Variable HaskExp Binds | EndExpr HaskExp
 >          deriving (Show, Data, Typeable)
 
 > data Block = Block Variable Binds
@@ -28,8 +29,24 @@
 >                      return $ Bind bindVar exp remaining
 >                  ))
 >                 <|>
->                 (do exp <- tillEndOfLine
->                     return $ EndExpr exp)
+>                 (try $ do whiteSpace
+>                           lexeme (string "let")
+>                           whiteSpace
+>                           bindVar <- identifier
+>                           whiteSpace
+>                           lexeme (string "=")
+>                           exp <- tillEndOfLine
+>                           remaining <- parseBind
+>                           return $ LetBind bindVar exp remaining)
+>                 <|>
+>                 (try $ do exp <- tillEndOfLine
+>                           whiteSpace 
+>                           eof
+>                           return $ EndExpr exp)
+>                 <|> 
+>                 (try $ do exp <- tillEndOfLine
+>                           remaining <- parseBind
+>                           return $ WildBind exp remaining)
 >                    
 > parseBlock :: Parser Block
 > parseBlock = do whiteSpace

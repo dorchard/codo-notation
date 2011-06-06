@@ -1,6 +1,6 @@
 > {-# LANGUAGE TemplateHaskell #-}
 
-> module Language.Haskell.SyntacticSugar where
+> module Language.Haskell.SyntacticSugar (codo, bido) where
 
 > import Text.ParserCombinators.Parsec
 > import Language.Haskell.SyntacticSugar.Parse
@@ -32,6 +32,7 @@
 >                     }
 
 > mkProjBind :: String -> ExpQ -> DecQ
+> mkProjBind "_" prj = valD wildP (normalB ([| $(free "cmap") $(prj) $(free "gamma") |])) []
 > mkProjBind var prj = valD (varP $ mkName var) (normalB ([| $(free "cmap") $(prj) $(free "gamma") |])) []
 
 > projs :: [String] -> [DecQ]
@@ -43,6 +44,10 @@
 > projs' [x, y] l = [mkProjBind x [| fst . $(l) |], mkProjBind y [| snd . $(l) |]]
 > projs' (x:xs) l = (mkProjBind x [| fst . $(l) |]):(projs' xs [| $(l) . snd |])
 
+> replaceToWild :: [Variable] -> Variable -> [Variable]
+> replaceToWild [] _ = []
+> replaceToWild (x:xs) y = (if (x==y) then "_" else x):(replaceToWild xs y)
+
 > interpretCoDo :: Block -> Maybe (Q Exp)
 > interpretCoDo (Block var binds) =
 >     do inner <- interpretCobinds binds [var]
@@ -52,6 +57,23 @@
 >      case parseToTH exp of
 >             Left x -> error x
 >             Right exp' -> Just $ (lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp')))
+> interpretCobinds (LetBind var exp binds) binders =
+>     case parseToTH exp of
+>             Left x -> error x
+>             Right exp' -> 
+>                do let binders' = replaceToWild binders var
+>                   let morph = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
+>                   inner <- (interpretCobinds binds binders')
+>                   return $ [| $(lamE [varP $ mkName var] inner) $(return exp') |]
+> interpretCobinds (WildBind exp binds) binders =
+>      case parseToTH exp of
+>             Left x -> error x
+>             Right exp' ->
+>                 do 
+>                   let binders' = (head binders):(replaceToWild binders (head binders))
+>                   let coKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
+>                   inner <- (interpretCobinds binds binders')
+>                   return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]
 > interpretCobinds (Bind var exp binds) binders = 
 >      case parseToTH exp of
 >         Left x -> error x

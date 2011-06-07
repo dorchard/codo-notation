@@ -58,3 +58,21 @@
 >                         fibn0 <- fby (const 0) fibn1
 >                         coreturn fibn0 |]
 
+The following shows the use of lets inside codo
+
+> fib2 :: Num a => Stream a
+> fib2 = cfix [$codo|(fib) let one = const 1
+>                          let zero = const 0
+>                          fibn2 <- (next fib) + (coreturn fib)
+>                          fibn1 <- fby one fibn2
+>                          fibn0 <- fby zero fibn1
+>                          coreturn fibn0 |]
+
+The following shows the use of implicit parameter shadowing
+(I may remove this feature, but sometimes it seems useful)
+
+> fib3 :: Num a => Stream a
+> fib3 = cfix [$codo|(fib) (next fib) + (coreturn fib)
+>                          fby (const 1) fib
+>                          fby (const 0) fib |]
+

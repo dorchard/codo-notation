@@ -23,7 +23,6 @@
 > pair :: (a -> b, a -> c) -> a -> (b, c)
 > pair (f, g) = \x -> (f x, g x)
 
-
 > codo :: QuasiQuoter
 > codo = QuasiQuoter { quoteExp = interpretBlock parseBlock interpretCoDo,
 >                      quotePat = (\_ -> wildP) --,
@@ -79,7 +78,7 @@
 >         Left x -> error x
 >         Right exp' ->
 >             do 
->                let binders' = var:binders
+>                let binders' = var:(replaceToWild binders (head binders))
 >                let coKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
 >                inner <- (interpretCobinds binds binders')
 >                return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]

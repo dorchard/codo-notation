@@ -49,38 +49,38 @@
 
 > interpretCoDo :: Block -> Maybe (Q Exp)
 > interpretCoDo (Block var binds) =
->     do inner <- interpretCobinds binds [var]
+>     do inner <- interpretCobinds binds [var] var
 >        Just $ lamE [varP $ mkName var] (appE inner (varE $ mkName var))
-> interpretCobinds :: Binds -> [Variable] -> Maybe (Q Exp)
-> interpretCobinds (EndExpr exp) binders =
+> interpretCobinds :: Binds -> [Variable] -> Variable -> Maybe (Q Exp)
+> interpretCobinds (EndExpr exp) binders param =
 >      case parseToTH exp of
 >             Left x -> error x
 >             Right exp' -> Just $ (lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp')))
-> interpretCobinds (LetBind var exp binds) binders =
+> interpretCobinds (LetBind var exp binds) binders param =
 >     case parseToTH exp of
 >             Left x -> error x
 >             Right exp' -> 
 >                do let binders' = replaceToWild binders var
 >                   let morph = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
->                   inner <- (interpretCobinds binds binders')
+>                   inner <- (interpretCobinds binds binders' param)
 >                   return $ [| $(lamE [varP $ mkName var] inner) $(return exp') |]
-> interpretCobinds (WildBind exp binds) binders =
+> interpretCobinds (WildBind exp binds) binders param =
 >      case parseToTH exp of
 >             Left x -> error x
 >             Right exp' ->
 >                 do 
->                   let binders' = (head binders):(replaceToWild binders (last binders))
+>                   let binders' = param:(replaceToWild binders param)
 >                   let coKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
->                   inner <- (interpretCobinds binds binders')
+>                   inner <- (interpretCobinds binds binders' param)
 >                   return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]
-> interpretCobinds (Bind var exp binds) binders = 
+> interpretCobinds (Bind var exp binds) binders param = 
 >      case parseToTH exp of
 >         Left x -> error x
 >         Right exp' ->
 >             do 
->                let binders' = var:(replaceToWild binders (last binders))
+>                let binders' = var:(replaceToWild binders var)
 >                let coKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
->                inner <- (interpretCobinds binds binders')
+>                inner <- (interpretCobinds binds binders' param)
 >                return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]
 
 

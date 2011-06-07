@@ -69,7 +69,7 @@
 >             Left x -> error x
 >             Right exp' ->
 >                 do 
->                   let binders' = (head binders):(replaceToWild binders (head binders))
+>                   let binders' = (head binders):(replaceToWild binders (last binders))
 >                   let coKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
 >                   inner <- (interpretCobinds binds binders')
 >                   return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]
@@ -78,7 +78,7 @@
 >         Left x -> error x
 >         Right exp' ->
 >             do 
->                let binders' = var:(replaceToWild binders (head binders))
+>                let binders' = var:(replaceToWild binders (last binders))
 >                let coKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
 >                inner <- (interpretCobinds binds binders')
 >                return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]

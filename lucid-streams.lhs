@@ -2,6 +2,8 @@
 > {-# LANGUAGE FlexibleInstances #-}
 > {-# LANGUAGE TypeSynonymInstances #-}
 
+> {-# LANGUAGE NoMonomorphismRestriction #-}
+
 > import Control.Comonad.Alt
 > import Language.Haskell.Codo
 
@@ -10,7 +12,7 @@
 > type Stream a = InContext Int a
 
 > -- n = 0 fby n + 1
-> nat' :: Num a => Stream () -> a
+> nat' :: Num a => Stream b -> a
 > nat' = [codo| _ => n' <- (nat' _) + 1
 >                    (constant 0) `fby` n' |]
 
@@ -19,11 +21,16 @@
 > -- fib = 0 fby 1 fby (fib + next fib)
 > fib' :: Num a => Stream () -> a
 > fib' = [codo| _ => fib <- fib' _
->                     fibn2 <- (next fib) + (current fib)
->                     fibn1 <- (constant 1) `fby` fibn2
->                     (constant 0) `fby` fibn1 |]
+>                    fibn2 <- (next fib) + (current fib)
+>                    fibn1 <- (constant 1) `fby` fibn2
+>                    (constant 0) `fby` fibn1 |]
 
 > fib = fib' <<= (constant ())
+
+
+> -- Example of nested tuple patterns
+> tup3 = [codo| (x, (y, z)) => a <- (current y) + (current z)
+>                              x `fby` a |] 
 
 Stream operations
 

@@ -23,6 +23,8 @@ as the composite of the InContext and product comonads.
 >     liftC_comp (O (x, a)) = a
 
 
+Levenshtein edit-distance algorithms
+
 > levenshtein :: DynP Char Int -> Int
 > levenshtein = [codo| _ => -- Initialise first row and column
 >                           d    <- levenshtein _
@@ -42,6 +44,14 @@ as the composite of the InContext and product comonads.
 >                           d' `thenXYl` d''  |]
 
 > edit_distance x y = levenshtein <<= (O ((' ':x, ' ':y), InContext undefined (0, 0)))
+
+*Main> putStr $ output $ edit_distance "hello" "hey"
+    h e l l o 
+ [0,1,2,3,4,5]
+h[1,0,1,2,3,4]
+e[2,1,0,1,2,3]
+y[3,2,1,1,2,3]
+
 
 Operations on dynamic programming grids
  

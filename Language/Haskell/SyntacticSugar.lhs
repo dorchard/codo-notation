@@ -1,6 +1,6 @@
 > {-# LANGUAGE TemplateHaskell #-}
 
-> module Language.Haskell.SyntacticSugar where
+> module Language.Haskell.SyntacticSugar (codo, bido) where
 
 > import Text.ParserCombinators.Parsec
 > import Language.Haskell.SyntacticSugar.Parse
@@ -23,7 +23,6 @@
 > pair :: (a -> b, a -> c) -> a -> (b, c)
 > pair (f, g) = \x -> (f x, g x)
 
-
 > codo :: QuasiQuoter
 > codo = QuasiQuoter { quoteExp = interpretBlock parseBlock interpretCoDo,
 >                      quotePat = (\_ -> wildP) --,
@@ -32,6 +31,7 @@
 >                     }
 
 > mkProjBind :: String -> ExpQ -> DecQ
+> mkProjBind "_" prj = valD wildP (normalB ([| $(free "cmap") $(prj) $(free "gamma") |])) []
 > mkProjBind var prj = valD (varP $ mkName var) (normalB ([| $(free "cmap") $(prj) $(free "gamma") |])) []
 
 > projs :: [String] -> [DecQ]
@@ -43,23 +43,44 @@
 > projs' [x, y] l = [mkProjBind x [| fst . $(l) |], mkProjBind y [| snd . $(l) |]]
 > projs' (x:xs) l = (mkProjBind x [| fst . $(l) |]):(projs' xs [| $(l) . snd |])
 
+> replaceToWild :: [Variable] -> Variable -> [Variable]
+> replaceToWild [] _ = []
+> replaceToWild (x:xs) y = (if (x==y) then "_" else x):(replaceToWild xs y)
+
 > interpretCoDo :: Block -> Maybe (Q Exp)
 > interpretCoDo (Block var binds) =
->     do inner <- interpretCobinds binds [var]
+>     do inner <- interpretCobinds binds [var] var
 >        Just $ lamE [varP $ mkName var] (appE inner (varE $ mkName var))
-> interpretCobinds :: Binds -> [Variable] -> Maybe (Q Exp)
-> interpretCobinds (EndExpr exp) binders =
+> interpretCobinds :: Binds -> [Variable] -> Variable -> Maybe (Q Exp)
+> interpretCobinds (EndExpr exp) binders param =
 >      case parseToTH exp of
 >             Left x -> error x
 >             Right exp' -> Just $ (lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp')))
-> interpretCobinds (Bind var exp binds) binders = 
+> interpretCobinds (LetBind var exp binds) binders param =
+>     case parseToTH exp of
+>             Left x -> error x
+>             Right exp' -> 
+>                do let binders' = replaceToWild binders var
+>                   let morph = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
+>                   inner <- (interpretCobinds binds binders' param)
+>                   return $ [| $(lamE [varP $ mkName var] inner) $(return exp') |]
+> interpretCobinds (WildBind exp binds) binders param =
+>      case parseToTH exp of
+>             Left x -> error x
+>             Right exp' ->
+>                 do 
+>                   let binders' = param:(replaceToWild binders param)
+>                   let coKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
+>                   inner <- (interpretCobinds binds binders' param)
+>                   return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]
+> interpretCobinds (Bind var exp binds) binders param = 
 >      case parseToTH exp of
 >         Left x -> error x
 >         Right exp' ->
 >             do 
->                let binders' = var:binders
+>                let binders' = var:(replaceToWild binders var)
 >                let coKleisli = lamE [varP $ mkName "gamma"] (letE (projs binders) (return exp'))
->                inner <- (interpretCobinds binds binders')
+>                inner <- (interpretCobinds binds binders' param)
 >                return [| $(inner) . ($(free "cobind") (pair ($(coKleisli), $(free "coreturn")))) |]
 
 

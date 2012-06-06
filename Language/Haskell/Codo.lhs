@@ -23,6 +23,36 @@
 
 > fv var = varE $ mkName var
 
+> -- Codo translation comprises a (1) parsing/textual-transformation phase 
+> --                              (2) interpretation phase
+> --                                    i). top-level transformation
+> --                                    ii). bindings transformations
+> --                                    iii). expression transformation
+
+> -- *****************************
+> -- (1) Parsing/textual-transformation
+> -- *****************************
+
+> codo :: QuasiQuoter
+> codo = QuasiQuoter { quoteExp = interpretCodo,
+>                      quotePat = undefined,
+>                      quoteType = undefined,
+>                      quoteDec = undefined }
+
+
+> interpretCodo s = do loc <- location                      
+>                      let pos = (loc_filename loc,
+>                                   fst (loc_start loc),
+>                                   1) -- set to 1 as we add spaces in to account for
+>                                      -- the start of the line
+>                      -- the following corrects the text to account for the preceding
+>                      -- Haskell code + quasiquote, to preserve alignment of further lines
+>                      s'' <- return ((take (snd (loc_start loc) - 1) (repeat ' ')) ++ s)
+>                      s''' <- (doParse codoTransPart pos s'')                 
+>                      case (parseExp s''') of
+>                             Left l -> error l
+>                             Right e -> codoMain e
+
 > doParse :: Monad m => (Parser a) -> (String, Int, Int) -> String -> m a
 > doParse parser (file, line, col) input =
 >     case (runParser p () "" input) of
@@ -36,6 +66,9 @@
 >                     (flip setSourceColumn) col $ pos;
 >                    x <- parser;
 >                    return x; }
+
+
+> -- Parsing a codo-block
               
 > pattern  = (try ( do string "=>"
 >                      return "" )) <|>
@@ -59,57 +92,57 @@
 >                           marker <- return $ ("_reserved_codo_block_marker_\n" ++ (take (col - 1) (repeat ' ')))
 >                           return $ "\\" ++ p ++ "->" ++ s1 ++ "do " ++ s3 ++ marker)
 >                  <|> ( do c <- anyChar
->                           if c=='_' then return "gamma"
+>                           if c=='_' then return "_reserved_gamma_"
 >                            else return [c] )
 
+> -- *****************************
+> -- (2) interpretation phase
+> -- *****************************
+> --   i). top-level transformation
+> -- *****************************
+
+> -- Top-level translation
+> codoMain :: Exp -> Q Exp
+> codoMain (LamE p bs) = [| $(codoMain' (LamE p bs)) . (cmap $(return $ projFun p)) |]
+
+> codoMain' :: Exp -> Q Exp
+> codoMain' (LamE [TupP ps] (DoE stms)) = let p (VarP v)  = [v]
+>                                             p (WildP)   = [mkName "_reserved_gamma_"]
+>                                             p (TupP ps) = concatMap p ps
+>                                             p _         = error codoPatternError
+>                                         in codoBind stms (concatMap p ps)
+> codoMain' (LamE [WildP] (DoE stms)) = codoBind stms [mkName "_reserved_gamma_"]
+> codoMain' (LamE [VarP v] (DoE stms)) = codoBind stms [v]
+> codoMain' _ = error codoPatternError
+
+> codoPatternError = "Malformed codo: codo must start with either a variable, wildcard, or tuple pattern (of wildcards or variables)"
+
+> -- create the projection function to arrange the codo-Block parameters into the correct ordder
+> patToVarPs (TupP ps) = concatMap patToVarPs ps
+> patToVarPs WildP     = [VarE $ mkName "undefined"]
+> patToVarPs (VarP v)  = [VarE v]
+> patToVarPs _         = error "Only tuple, variable, or wildcard patterns currently allowed"
+
+> projExp [] = TupE []
+> projExp (x:xs) = TupE [x, (projExp xs)]
+
+> projFun p = LamE p (projExp (concatMap patToVarPs p))
+
+> -- **********************
+> -- ii). bindings transformations
+> -- **********************
+
+
 > -- Note all these functions for making binders take a variable which is the "gamma" variable
-
-> mkProjBind :: Name -> ExpQ -> ExpQ -> DecQ
-> mkProjBind var prj gam = valD (varP $ var) (normalB ([| cmap $(prj) $(gam) |])) []
-
-> projs :: [Name] -> ExpQ -> [DecQ]
-> projs x gam = projs' x [| id |] gam
-
-> projs' :: [Name] -> ExpQ -> ExpQ -> [DecQ]
-> projs' [] _ _ = []
-> projs' [x] l gam = --if (showName x == "gamma") then 
->                --    [valD (varP x) (normalB [| $(varE x) |]) []]
->                --else 
->                    [valD (varP x) (normalB gam) []]
-> projs' [x, y] l gam = [mkProjBind x [| snd . $(l) |] gam, mkProjBind y [| fst . $(l) |] gam]
-> projs' (x:xs) l gam = (mkProjBind x [| snd . $(l) |] gam):(projs' xs [| $(l) . fst |] gam)
-
-> envProj vars exp = let gam = mkName "gamma" in (lamE [varP gam] (letE (projs vars (varE gam)) exp))
-
-> expToPat :: Exp -> Pat
-> expToPat (VarE v) = VarP v
-> expToPat (TupE xs) = TupP (map expToPat xs)
-> expToPat e = error $ "Codo cannot have the following pattern on LHS of a binder " ++ show e
-
-> patToBinders :: Pat -> [Name]
-> patToBinders (VarP v) = [v]
-> patToBinders (TupP xs) = concatMap patToBinders xs
-> patToBinders p = error $ "Codo cannot have the following pattern on LHS of a binder " ++ show p
+> -- Binding interpretation (\vdash_c)
 
 > codoBind :: [Stmt] -> [Name] -> Q Exp
-> codoBind [NoBindS e]             vars = case e of 
->                                           UInfixE e1 (VarE v) e2 | showName v == "<<-" ->
->                                             error "Codo block must end with an expression"
->                                           _ -> [| \gamma -> $(envProj vars (transformM (doToCodo) e)) gamma |]
+> codoBind [NoBindS e]             vars = [| \gamma -> $(envProj vars (transformM (doToCodo) e)) gamma |]
 > codoBind [x]                     vars = error "Codo block must end with an expressions"      
-> codoBind ((NoBindS e):bs)        vars = case e of 
->                                           UInfixE e1 (VarE v) e2 | showName v == "<<-" -> 
->                                               let p = expToPat e1
->                                                   vs = patToBinders p
->                                               in    [| $(codoBind bs (vs++vars)) . 
->                                                            (cobind
->                                                              (\gamma -> 
->                                                              (coreturn gamma,
->                                                             $(transformM doToCodo e2) gamma))) |]
->                                           _ -> [| $(codoBind bs vars) .
->                                                    (cobind (\gamma ->
->                                                      (coreturn gamma,
->                                                        $(envProj vars (transformM (doToCodo) e)) gamma))) |]
+> codoBind ((NoBindS e):bs)        vars = [| $(codoBind bs vars) .
+>                                               (cobind (\gamma ->
+>                                                  ($(envProj vars (transformM (doToCodo) e)) gamma,
+>                                                   coreturn gamma))) |]
 
 > codoBind ((LetS [ValD (VarP v) (NormalB e) []]):bs) vars = 
 >                                           [| (\gamma -> 
@@ -119,50 +152,35 @@
 
 > codoBind ((BindS (VarP v) e):bs) vars = [| $(codoBind bs (v:vars)) . 
 >                                            (cobind (\gamma ->
->                                                       (coreturn gamma, 
->                                                        $(envProj vars (transformM (doToCodo) e)) gamma))) |]
+>                                                       ($(envProj vars (transformM (doToCodo) e)) gamma,
+>                                                        coreturn gamma))) |]
 > codoBind _ _ = error "Ill-formed codo bindings"
 
 > doToCodo :: Exp -> Q Exp
 > doToCodo (LamE [VarP v] (DoE ((NoBindS (VarE n)):stmts)))
->              | showName n == "_reserved_codo_block_marker_" = codoBind stmts [v] 
->                                 -- notably, doesn't pick up outside environment
+>              -- Nested codo-block
+>              -- notably, doesn't pick up outside environment
+>              | showName n == "_reserved_codo_block_marker_" = codoMain (LamE [VarP v] (DoE stmts))
+>                                   
 >              | otherwise = return $ (DoE ((NoBindS (VarE n)):stmts))
 > doToCodo e  = return e
 
 
-> codoPatternError = "Malformed codo: codo must start with either a variable, wildcard, or tuple pattern (of wildcards or variables)"
+> -- ***********************
+> --  iii). expression transformation
+> -- ***********************
 
-> codoMain :: Exp -> Q Exp
-> codoMain (LamE [TupP ps] (DoE stms)) = let p (VarP v) = v
->                                            p (WildP) = mkName "gamma"
->                                            p _ = error codoPatternError
->                                        in codoBind stms (reverse $ map p ps)
-> codoMain (LamE [WildP] (DoE stms)) = codoBind stms [mkName "gammaWild"]
-> codoMain (LamE [VarP v] (DoE stms)) = codoBind stms [v]
-> codoMain _ = error codoPatternError
+> -- Creates a scope where all the local variables are project
+> envProj :: [Name] -> ExpQ -> ExpQ
+> envProj vars exp = let gam = mkName "gamma" in (lamE [varP gam] (letE (projs vars (varE gam)) exp))
 
-> interpretCodo s = do loc <- location                      
->                      let pos = (loc_filename loc,
->                                   fst (loc_start loc),
->                                   1) -- set to 1 as we add spaces in to account for
->                                      -- the start of the line
->                      -- the following corrects the text to account for the preceding
->                      -- Haskell code + quasiquote, to preserve alignment of further lines
->                      s'' <- return ((take (snd (loc_start loc) - 1) (repeat ' ')) ++ s)
->                      s''' <- (doParse codoTransPart pos s'')                 
->                      case (s''' `trace` parseExp s''') of
->                             Left l -> error l
->                             Right e -> codoMain e
+> -- Make a comonadic projection
+> mkProj gam (v, n) = valD (varP v) (normalB [| cmap $(prj n) $(gam) |]) []
 
+> -- Creates a list of projections
+> projs :: [Name] -> ExpQ -> [DecQ]
+> projs x gam =  map (mkProj gam) (zip x [0..(length x - 1)]) 
 
-> codo :: QuasiQuoter
-> codo = QuasiQuoter { quoteExp = interpretCodo,
->                      quotePat = undefined,
->                      quoteType = undefined,
->                      quoteDec = undefined }
-
-
-> bindors :: Comonad c => c [a] -> [c a]
-
-> bindors x = (cmap head x) : (bindors (cmap tail x))
+> -- Computes the correct projection
+> prj 0 = [| fst |]
+> prj n = [| $(prj (n-1)) . snd |]

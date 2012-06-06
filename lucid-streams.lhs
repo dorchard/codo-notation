@@ -18,7 +18,7 @@
 
 > -- fib = 0 fby 1 fby (fib + next fib)
 > fib' :: Num a => Stream () -> a
-> fib' = [$codo| _ => fib <- fib' _
+> fib' = [codo| _ => fib <- fib' _
 >                     fibn2 <- (next fib) + (current fib)
 >                     fibn1 <- (constant 1) `fby` fibn2
 >                     (constant 0) `fby` fibn1 |]

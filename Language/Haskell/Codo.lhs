@@ -19,7 +19,7 @@
 > import Debug.Trace
 > import Data.Char
 
-> import Control.Comonad.Alt
+> import Control.Comonad
 
 > fv var = varE $ mkName var
 
@@ -103,14 +103,10 @@
 
 > -- Top-level translation
 > codoMain :: Exp -> Q Exp
-> codoMain (LamE p bs) = [| $(codoMain' (LamE p bs)) . (cmap $(return $ projFun p)) |]
+> codoMain (LamE p bs) = [| $(codoMain' (LamE p bs)) . (fmap $(return $ projFun p)) |]
 
 > codoMain' :: Exp -> Q Exp
-> codoMain' (LamE [TupP ps] (DoE stms)) = let p (VarP v)  = [v]
->                                             p (WildP)   = [mkName "_reserved_gamma_"]
->                                             p (TupP ps) = concatMap p ps
->                                             p _         = error codoPatternError
->                                         in codoBind stms (concatMap p ps)
+> codoMain' (LamE [TupP ps] (DoE stms)) = codoBind stms (concatMap patToVarPs ps)
 > codoMain' (LamE [WildP] (DoE stms)) = codoBind stms [mkName "_reserved_gamma_"]
 > codoMain' (LamE [VarP v] (DoE stms)) = codoBind stms [v]
 > codoMain' _ = error codoPatternError
@@ -118,20 +114,26 @@
 > codoPatternError = "Malformed codo: codo must start with either a variable, wildcard, or tuple pattern (of wildcards or variables)"
 
 > -- create the projection function to arrange the codo-Block parameters into the correct ordder
+> patToVarPs :: Pat -> [Name]
 > patToVarPs (TupP ps) = concatMap patToVarPs ps
-> patToVarPs WildP     = [VarE $ mkName "undefined"]
-> patToVarPs (VarP v)  = [VarE v]
+> patToVarPs WildP     = [mkName "_reserved_gamma_"]
+> patToVarPs (VarP v)  = [v]
 > patToVarPs _         = error "Only tuple, variable, or wildcard patterns currently allowed"
 
 > projExp [] = TupE []
 > projExp (x:xs) = TupE [x, (projExp xs)]
 
-> projFun p = LamE p (projExp (concatMap patToVarPs p))
+> projFun p = LamE (map replaceWild p) (projExp (map VarE (concatMap patToVarPs p)))
+
+> replaceWild WildP = VarP $ mkName "_reserved_gamma_"
+> replaceWild x = x
 
 > -- **********************
 > -- ii). bindings transformations
 > -- **********************
 
+> convert lVars envVars = LamE [TupP [TupP (map VarP lVars),
+>                                     TupP ((map VarP envVars) ++ [TupP []])]] (projExp (map VarE (lVars ++ envVars)))
 
 > -- Note all these functions for making binders take a variable which is the "gamma" variable
 > -- Binding interpretation (\vdash_c)
@@ -140,9 +142,9 @@
 > codoBind [NoBindS e]             vars = [| \gamma -> $(envProj vars (transformM (doToCodo) e)) gamma |]
 > codoBind [x]                     vars = error "Codo block must end with an expressions"      
 > codoBind ((NoBindS e):bs)        vars = [| $(codoBind bs vars) .
->                                               (cobind (\gamma ->
+>                                               (extend (\gamma ->
 >                                                  ($(envProj vars (transformM (doToCodo) e)) gamma,
->                                                   coreturn gamma))) |]
+>                                                   extract gamma))) |]
 
 > codoBind ((LetS [ValD (VarP v) (NormalB e) []]):bs) vars = 
 >                                           [| (\gamma -> 
@@ -151,9 +153,14 @@
 
 
 > codoBind ((BindS (VarP v) e):bs) vars = [| $(codoBind bs (v:vars)) . 
->                                            (cobind (\gamma ->
+>                                            (extend (\gamma ->
 >                                                       ($(envProj vars (transformM (doToCodo) e)) gamma,
->                                                        coreturn gamma))) |]
+>                                                        extract gamma))) |]
+> codoBind ((BindS (TupP ps) e):bs) vars = [| $(codoBind bs ((concatMap patToVarPs ps) ++ vars)) .
+>                                            (extend (\gamma ->
+>                                                      $(return $ convert (concatMap patToVarPs ps) vars)  
+>                                                       ($(envProj vars (transformM (doToCodo) e)) gamma,
+>                                                        extract gamma))) |]
 > codoBind _ _ = error "Ill-formed codo bindings"
 
 > doToCodo :: Exp -> Q Exp
@@ -175,7 +182,7 @@
 > envProj vars exp = let gam = mkName "gamma" in (lamE [varP gam] (letE (projs vars (varE gam)) exp))
 
 > -- Make a comonadic projection
-> mkProj gam (v, n) = valD (varP v) (normalB [| cmap $(prj n) $(gam) |]) []
+> mkProj gam (v, n) = valD (varP v) (normalB [| fmap $(prj n) $(gam) |]) []
 
 > -- Creates a list of projections
 > projs :: [Name] -> ExpQ -> [DecQ]

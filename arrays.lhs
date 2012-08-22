@@ -1,18 +1,25 @@
 > {-# LANGUAGE TemplateHaskell #-}
 > {-# LANGUAGE QuasiQuotes #-}
 
-> import Control.Comonad.Alt
+> import Control.Comonad
 > import Language.Haskell.Codo
 
 > import Data.Array
 
+> class Comonad c => ComonadZip c where
+>     czip ::  (c a, c b) -> c (a, b)
+
+
 > data PArray i a = PA (Array i a) i deriving Show
 
 > instance Ix i => Comonad (PArray i) where
->    current (PA arr c) = arr!c
->    f <<= (PA x c)  =
+>    extract (PA arr c) = arr!c
+>    extend f (PA x c)  =
 >      let  es' = map (\i -> (i, f (PA x i))) (indices x)
 >      in   PA (array (bounds x) es') c
+
+> instance Ix i => Functor (PArray i) where
+>     fmap f = extend (f . extract)
 
 > laplace1D :: Fractional a => PArray Int a -> a
 > laplace1D (PA a i) =
@@ -25,10 +32,13 @@
 > data PBArray i a = PBA (Array i a) i (i, i) deriving Show
 
 > instance Ix i => Comonad (PBArray i) where
->    current (PBA arr c _) = arr!c
->    f <<= (PBA x c b) =
+>    extract (PBA arr c _) = arr!c
+>    extend f (PBA x c b) =
 >      let  es' = map (\i -> (i, f (PBA x i b))) (indices x)
 >      in   PBA (array (bounds x) es') c b
+
+> instance Ix i => Functor (PBArray i) where
+>     fmap f = extend (f . extract)
 
 
 > withInterior :: Ord i => (PBArray i a -> b) -> (PBArray i a -> b) -> (PBArray i a -> b)
@@ -43,14 +53,14 @@
 
 > laplace1Db :: Fractional a => PBArray Int a -> a
 > laplace1Db = (\(PBA a i _) -> a!(i-1) - 2*(a!i) + a!(i+1))
->                  `withExterior` current
+>                  `withExterior` extract
 
 > localMean1Db :: Fractional a => PBArray Int a -> a
 > localMean1Db = (\(PBA a i _) -> (a!(i-1) + a!i + a!(i+1)) / 3.0)
->                   `withExterior` current
+>                   `withExterior` extract
 
 > filterC :: Comonad c => (a -> Bool) -> a -> c a -> a
-> filterC p x a = if p (current a) then x else current a
+> filterC p x a = if p (extract a) then x else extract a
 
 
 Example array values
@@ -63,10 +73,10 @@ Example array values
 
 > prog1 = [codo| x => y <- laplace1Db x
 >                     z <- localMean1Db y
->                     current z |]
+>                     extract z |]
 
 > plus :: (Comonad c, Num a) => c a -> c a -> a
-> plus x y = current x + current y
+> plus x y = extract x + extract y
 
 > prog2 = [codo| a => b <- localMean1Db a
 >                     c <- laplace1Db b
@@ -93,7 +103,7 @@ Example array values
 
 > prog3 = [codo| (x, y) => a <- laplace1Db x
 >                          b <- laplace1Db y
->                          (current a) + (current b) |]
+>                          (extract a) + (extract b) |]
 
 prog3 <<= (czip (x, y))
 
@@ -130,14 +140,14 @@ Other expermintation with abstractions on boundary testing
 >                     b' <- b `withBoundary` a
 >                     c <- localMean1Dc b'
 >                     c' <- c `withBoundary` a
->                     d <- (current b') `min` (current c')
+>                     d <- (extract b') `min` (extract c')
 >                     filterC (<0.3) 0.3 d |]
 
 > boo4 = [codo|  a => b <- laplace1Dc a
 >                     b' <- b `withBoundary` a
 >                     c <- localMean1Dc b'
 >                     c' <- c `withBoundary` a
->                     d <- (current b') `min` (current c')
+>                     d <- (extract b') `min` (extract c')
 >                     w <- localMean1Dc d
 >                     w `withBoundary` a |]
 
@@ -145,14 +155,14 @@ Other expermintation with abstractions on boundary testing
 >                      b' <- b `withExterior'` a
 >                      c <- localMean1Dc b'
 >                      c' <- c `withExterior'` a
->                      d <- (current b') `min` (current c')
+>                      d <- (extract b') `min` (extract c')
 >                      w <- localMean1Dc d
 >                      w `withExterior'` a|]
 
-> boo4'' = [codo|  a => b <- laplace1Dc `withExterior` current $ a
->                       c <- localMean1Dc `withExterior` current $ b
->                       d <- (current b) `min` (current c)
->                       localMean1Dc `withExterior` current $ d |]
+> boo4'' = [codo|  a => b <- laplace1Dc `withExterior` extract $ a
+>                       c <- localMean1Dc `withExterior` extract $ b
+>                       d <- (extract b) `min` (extract c)
+>                       localMean1Dc `withExterior` extract $ d |]
 
 
 
@@ -165,10 +175,35 @@ Other expermintation with abstractions on boundary testing
 >                      laplace1D y |]
 
 > prog2a = [codo| x => y <- laplace1D x
->                      z <- (current x) + (current y)
->                      current z |]
+>                      z <- (extract x) + (extract y)
+>                      extract z |]
 
 > prog3a = [codo| x => y <- laplace1D x
->                      z <- (current x) + (current y)
+>                      z <- (extract x) + (extract y)
 >                      laplace1D z |]
 
+
+> -- ==================== 2D arrays ==============
+
+> -- To simplify code, make tuples of numbers a number type themselves
+> instance (Num a, Num b) => Num (a, b) where
+>     (x, y) + (a, b) = (x + a, y  + b)
+>     (x, y) - (a, b) = (x - a, y - b)
+>     (x, y) * (a, b) = (x * a, y * b)
+>     abs (x, y) = (abs x, abs y)
+>     signum (x, y) = (signum x, signum y)
+>     fromInteger x = (fromInteger x, fromInteger x)
+
+
+> laplace2D, gauss2D :: Fractional a => PArray (Int, Int) a -> a
+> laplace2D a = a ? (-1, 0) + a ? (1, 0) + a ? (0, -1) + a ? (0, 1) - 4 * a ? (0, 0)
+> gauss2D a = (a ? (-1, 0) + a ? (1, 0) + a ? (0, -1) + a ? (0, 1) + 2 * a ? (0, 0)) / 6.0
+
+> (?) :: (Ix i, Num a, Num i) => PArray i a -> i -> a
+> (PA a i) ? i' = if (inRange (bounds a) (i+i')) then a!(i+i') else 0
+
+> contours :: PArray (Int, Int) Float -> Float
+> contours = [codo| x => y  <- gauss2D x
+>                        z  <- gauss2D y
+>                        w  <- (extract y) - (extract z)
+>                        laplace2D w |]

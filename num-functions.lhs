@@ -4,7 +4,7 @@
 > {-# LANGUAGE NoMonomorphismRestriction #-}
 
 > import Language.Haskell.Codo
-> import Control.Comonad.Alt
+> import Control.Comonad
 > import Data.Monoid
 > import Data.Array
 > import Text.Printf
@@ -32,24 +32,27 @@ Minima testing function
 
 > minima = [codo| f => f' <- differentiate f
 >                      f'' <- differentiate f'
->                      (current f'' `roughlyEqual` 0) && (current f'' < 0) |]
+>                      (extract f'' `roughlyEqual` 0) && (extract f'' < 0) |]
 
 Macluarin approximations
 
 > m3 = [codo| (f, x) => f' <- differentiate f
 >                       f'' <- differentiate f'
->                       (f (-current x))
->                        + (f' (-current x)) * (coreturn x)
->                        + (f'' (-current x)) / 2 * (coreturn x)**2 |]
+>                       (f (-extract x))
+>                        + (f' (-extract x)) * (extract x)
+>                        + (f'' (-extract x)) / 2 * (extract x)**2 |]
 
 > m3' = [codo| (f, xf) => f' <- differentiate f
 >                         f'' <- differentiate f'
->                         let x = coreturn xf
+>                         let x = extract xf
 >                         (f (-x)) 
 >                          + (f' (-x)) * x
 >                          + ((f'' (-x)) / 2) * x**2 |]
 
 Zipping operations
+
+> class Comonad c => ComonadZip c where
+>     czip ::  (c a, c b) -> c (a, b)
 
 > instance Monoid x => ComonadZip ((->) x) where
 >     czip (f, g) = \x -> (f x, g x)

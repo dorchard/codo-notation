@@ -5,7 +5,7 @@
 > {-# LANGUAGE TypeOperators #-}
 
 > import Language.Haskell.Codo
-> import Control.Comonad.Alt
+> import Control.Comonad
 > import Data.Monoid
 
 > import Control.Compose
@@ -16,6 +16,26 @@ as the composite of the InContext and product comonads.
 
 > type DynP x = ((,) ([x], [x])) :. (InContext (Int, Int))
 
+> -- Distributive law between comonads
+> class ComonadDist c d where
+>     cdist :: c (d a) -> d (c a)
+
+> -- The composite of any two comonads with a (coherence preserving) distributive law
+> -- forms a comonad
+> instance (Comonad c, Comonad d, ComonadDist c d) => Comonad (c :. d) where
+>     extract (O x) = extract . extract $ x
+>     duplicate (O x) = O . (fmap (fmap O)) . (fmap cdist) . (fmap (fmap duplicate)) . duplicate $ x
+
+
+> -- Comonad transformers
+> class ComonadTrans t where
+>     liftC :: Comonad c => t c a -> c a
+
+> -- Comonad transformer for composites
+> class ComonadTransComp t where
+>     liftC_comp :: Comonad c => (t :. c) a -> c a
+
+
 > instance ComonadDist ((,) x) (InContext s) where
 >     cdist (x, InContext s c) = InContext (\c -> (x, s c)) c
 
@@ -23,12 +43,13 @@ as the composite of the InContext and product comonads.
 >     liftC_comp (O (x, a)) = a
 
 
+
 Levenshtein edit-distance algorithms
 
 > levenshtein :: DynP Char Int -> Int
 > levenshtein = [codo| _ => -- Initialise first row and column
 >                           d    <- levenshtein _
->                           dn   <- (coreturn d) + 1
+>                           dn   <- (extract d) + 1
 >                           d0   <- (constant 0) `fbyXl` dn
 >                           d'   <- d0 `fbyYl` dn
 >                           -- Shift (-1, 0), (0, -1), (-1, -1)
@@ -37,10 +58,10 @@ Levenshtein edit-distance algorithms
 >                           d_nw <- d !!! (-1, -1)
 >                           -- Body
 >                           d'' <- if (correspondingX d == correspondingY d) then
->                                     coreturn d_nw
->                                  else minimum [(coreturn d_w) + 1,
->                                                (coreturn d_n) + 1,
->                                                (coreturn d_nw) + 1]
+>                                     extract d_nw
+>                                  else minimum [(extract d_w) + 1,
+>                                                (extract d_n) + 1,
+>                                                (extract d_nw) + 1]
 >                           d' `thenXYl` d''  |]
 
 > edit_distance x y = levenshtein <<= (O ((' ':x, ' ':y), InContext undefined (0, 0)))

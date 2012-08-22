@@ -4,7 +4,7 @@
 > {-# LANGUAGE FlexibleInstances #-}
 
 > import Language.Haskell.Codo
-> import Control.Comonad.Alt
+> import Control.Comonad
 > import Data.Monoid
 
 > import Data.Array.IArray
@@ -14,19 +14,23 @@ Usea an array to do dynamic programming as opposed to the (inefficient) InContex
 > data DynP x a = DynP (Array (Int, Int) a) [x] [x] (Int, Int) ((Int, Int), (Int, Int))
 
 > instance Comonad (DynP x) where
->     current (DynP a _ _ c _) = a ! c
+>     extract (DynP a _ _ c _) = a ! c
 
->     f <<= (DynP a x y c (b1, b2)) = 
+>     extend f (DynP a x y c (b1, b2)) = 
 >           let es = map (\c' -> (c', f (DynP a x y c' (b1, b2)))) (range (b1, b2))
 >               a' = array (b1, b2) es
 >           in DynP a' x y c (b1, b2)
+
+> instance Functor (DynP x) where
+>     fmap f = extend (f . extract)
+
 
 Levenshtein edit-distance algorithms
 
 > levenshtein :: DynP Char Int -> Int
 > levenshtein = [codo|  _ => -- Initialise first row and column
 >                            d    <- levenshtein _
->                            dn   <- (coreturn d) + 1
+>                            dn   <- (extract d) + 1
 >                            d0   <- (constant 0) `fbyX` dn
 >                            d'   <- d0 `fbyY` dn
 >                            -- Shift (-1, 0), (0, -1), (-1, -1)
@@ -35,10 +39,10 @@ Levenshtein edit-distance algorithms
 >                            d_nw <- d !!! (-1, -1)
 >                            -- Body
 >                            d'' <- if (correspondingX d == correspondingY d) then
->                                      coreturn d_nw
->                                   else minimum [(coreturn d_w) + 1,
->                                                 (coreturn d_n) + 1,
->                                                 (coreturn d_nw) + 1]
+>                                      extract d_nw
+>                                   else minimum [(extract d_w) + 1,
+>                                                 (extract d_n) + 1,
+>                                                 (extract d_nw) + 1]
 >                            d' `thenXY` d''  |]
       
 > edit_distance x y = levenshtein <<= (DynP undefined (' ':x) (' ':y) (0, 0) ((0, 0), (length x, length y)))
@@ -99,6 +103,9 @@ Not used in this example
 
 > prod :: [a] -> [b] -> [(a, b)]
 > prod xs ys = xs >>= (\x' -> ys >>= (\y' -> return (x', y')))
+
+> class Comonad c => ComonadZip c where
+>     czip ::  (c a, c b) -> c (a, b)
 
 > -- pre condition: the dyn prog paramerters are equal
 > instance ComonadZip (DynP x) where

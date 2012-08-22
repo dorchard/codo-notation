@@ -1,15 +1,19 @@
 > module Context where
 
 > import Data.Monoid
-> import Control.Comonad.Alt
+> import Control.Comonad
 
 InContext or CoState comonad - models context-aware computations
 
 > data InContext c a = InContext (c -> a) c 
 
 > instance Comonad (InContext c) where
->     current (InContext s c) = s c
->     k <<= (InContext s c) = InContext (\c' -> k (InContext s c')) c
+>     extract (InContext s c) = s c
+>     extend k (InContext s c) = InContext (\c' -> k (InContext s c')) c
+
+> instance Functor (InContext c) where
+>     fmap f = extend (f . extract)
+
 
 > at :: InContext c a -> c -> a
 > at (InContext s _) c' = s c'
@@ -20,8 +24,18 @@ InContext or CoState comonad - models context-aware computations
 
 Param or exponent comonad - models context-oblivious computations
 
-> data Param x a = Param (x -> a)
+ instance Monoid x => Comonad ((->) x) where
+     extract f = f mempty
+     extend k f = (\x' -> k (\x -> f (mappend x x')))
 
-> instance Monoid x => Comonad (Param x) where
->     current (Param f) = f mempty
->     k <<= (Param f) = Param (\x' -> k (Param (\x -> f (mappend x x'))))
+ instance Monoid x => Functor ((->) x) where
+     fmap f = extend (f . extract)
+
+Product comonad
+
+ instance Comonad ((,) x) where
+     extract (x, a) = a
+     extend f (x, a) = (x, f (x, a))
+
+ instance Functor ((,) x) where
+     fmap f = extend (f . extract)

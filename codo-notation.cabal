@@ -1,7 +1,9 @@
 name:                codo-notation
 version:             0.5
 synopsis:            A notation for comonads, analogous to the do-notation for monads.
-description:         Requires the @TemplateHaskell@ and @QuasiQuotes@ extensions.
+description:         A notation for comonads, analogous to the do-notation for monads. 
+		     .
+		     Requires the @TemplateHaskell@ and @QuasiQuotes@ extensions.
 		     .
     		     Example 1:
 		     .

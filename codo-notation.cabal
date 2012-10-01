@@ -1,0 +1,22 @@
+name:                codo-notation
+version:             0.5
+synopsis:            A notation for comonads, analogous to the do-notation for monads
+-- description:         
+license:             BSD3
+license-file:        LICENSE
+author:              Dominic Orchard
+maintainer:          dom.orchard@gmail.com
+-- copyright:           
+category:            Language
+build-type:          Simple
+cabal-version:       >=1.8
+
+library
+  exposed-modules:     Language.Haskell.Codo
+  -- other-modules:       
+  build-depends:       base >= 3.5,
+                       comonad >= 3,
+                       uniplate > 1.6,
+                       template-haskell >= 2.7,
+                       haskell-src-meta >= 0.5.1
+  hs-source-dirs:      src

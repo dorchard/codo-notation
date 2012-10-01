@@ -1,0 +1,11 @@
+The codo-notation provides a lightweight, do-like, syntactic sugar for
+programming with comonads in Haskell.
+
+A number of examples can be found here:
+https://github.com/dorchard/codo-notation
+
+and in the following paper:
+http://www.cl.cam.ac.uk/~dao29/drafts/codo-notation-orchard-ifl12.pdf
+
+---------------
+Dominic Orchard

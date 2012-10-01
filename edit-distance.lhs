@@ -4,7 +4,7 @@
 > {-# LANGUAGE FlexibleInstances #-}
 
 > import Language.Haskell.Codo
-> import Control.Comonad.Alt
+> import Control.Comonad
 
 > import Context
 
@@ -16,17 +16,20 @@ Comonad is a composite of InContext and product comonad
 Comonad definition
 
 > instance Comonad (DynP x) where
->     current (DynP d _ _) = current d
+>     extract (DynP d _ _) = extract d
 
->     f <<= (DynP (InContext s c) x y) = 
+>     extend f (DynP (InContext s c) x y) = 
 >         DynP (InContext (\c' -> f (DynP (InContext s c') x y)) c) x y
+
+> instance Functor (DynP x) where
+>     fmap f = extend (f . extract)
 
 Levenshtein edit-distance example
 
-> levenshtein :: DynP Char a -> Int
+> levenshtein :: DynP Char Int -> Int
 > levenshtein = [codo| _ => -- Initialise first row and column
 >                           d    <- levenshtein _
->                           dn   <- (coreturn d) + 1
+>                           dn   <- (extract d) + 1
 >                           d0   <- (constant 0) `fbyX` dn
 >                           d'   <- d0 `fbyY` dn
 >                           -- Shift (-1, 0), (0, -1), (-1, -1)
@@ -35,10 +38,10 @@ Levenshtein edit-distance example
 >                           d_nw <- d !!! (-1, -1)
 >                           -- Body
 >                           d'' <- if (correspondingX d == correspondingY d) then
->                                     coreturn d_nw
->                                  else minimum [(coreturn d_w) + 1,
->                                                (coreturn d_n) + 1,
->                                                (coreturn d_nw) + 1]
+>                                     extract d_nw
+>                                  else minimum [(extract d_w) + 1,
+>                                                (extract d_n) + 1,
+>                                                (extract d_nw) + 1]
 >                           d' `thenXY` d''  |]
 
 > edit_distance x y = levenshtein <<= (DynP (InContext undefined (0, 0)) (' ':x) (' ':y))

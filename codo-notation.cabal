@@ -1,15 +1,56 @@
 name:                codo-notation
 version:             0.5
-synopsis:            A notation for comonads, analogous to the do-notation for monads
+synopsis:            A notation for comonads, analogous to the do-notation for monads.
+description:         Requires the @TemplateHaskell@ and @QuasiQuotes@ extensions.
+		     .
+    		     Example 1:
+		     .
+                     @        
+                      &#x7b;-\# LANGUAGE TemplateHaskell \#-&#x7d;
+                      &#x7b;-\# LANGUAGE QuasiQuotes \#-&#x7d;	  
+		      .
+		      import Control.Comonad
+                      import Language.Haskell.Codo
+		      .
+                      foo :: (Comonad c, Num a) => c a -> a
+                      foo = [codo| x => extract x + 1 |] 
+                     @
+		     .
+                     Example 2:
+		     .
+                     @
+                      import Data.Monoid
+
+                      instance Monoid Double where
+                      &#x20;&#x20;&#x20;    mempty = 0.0
+                      &#x20;&#x20;&#x20;    mappend = (+)
+		      .
+                      differentiate f = ((f 0.001) - f 0) / 0.001
+		      .
+                      minima :: (Double -> Double) -> Bool
+                      minima = [codo| f => f'  <- differentiate f
+                      &#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20; f'' <- differentiate f'
+                      &#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20;&#x20; (extract f' &#60; 0.001) && (extract f'' &#62; 0) |] 
+		     @
+		     .
+                     Further explanation of the syntax can be found in the following (short) paper: <http://www.cl.cam.ac.uk/~dao29/drafts/codo-notation-orchard-ifl12.pdf> with a numer of examples.
+                     .
+                     Further examples can be found here: <https://github.com/dorchard/codo-notation>.
+                     
 -- description:         
 license:             BSD3
 license-file:        LICENSE
-author:              Dominic Orchard
-maintainer:          dom.orchard@gmail.com
+author:              Dominic Orchard <dom.orchard@gmail.com>
+maintainer:          Dominic Orchard <dom.orchard@gmail.com>
+stability:           experimental
 -- copyright:           
 category:            Language
 build-type:          Simple
-cabal-version:       >=1.8
+cabal-version:       >=1.7
+
+source-repository head
+  type:     git
+  location: git://github.com/dorchard/codo-notation.git
 
 library
   exposed-modules:     Language.Haskell.Codo
@@ -18,5 +59,6 @@ library
                        comonad >= 3,
                        uniplate > 1.6,
                        template-haskell >= 2.7,
-                       haskell-src-meta >= 0.5.1
+                       haskell-src-meta >= 0.5.1,
+                       parsec >= 3
   hs-source-dirs:      src

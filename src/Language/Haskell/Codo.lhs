@@ -1,7 +1,7 @@
 > {-# LANGUAGE TemplateHaskell #-}
 > {-# LANGUAGE NoMonomorphismRestriction #-}
 
-> module Language.Haskell.Codo where
+> module Language.Haskell.Codo(codo) where
 
 > import Text.ParserCombinators.Parsec
 > import Text.ParserCombinators.Parsec.Expr

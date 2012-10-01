@@ -55,7 +55,7 @@ source-repository head
 library
   exposed-modules:     Language.Haskell.Codo
   -- other-modules:       
-  build-depends:       base >= 3.5,
+  build-depends:       base >= 4.2 && < 5,
                        comonad >= 3,
                        uniplate > 1.6,
                        template-haskell >= 2.7,

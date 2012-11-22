@@ -1,5 +1,5 @@
 name:                codo-notation
-version:             0.5.2
+version:             0.6
 synopsis:            A notation for comonads, analogous to the do-notation for monads.
 description:         A notation for comonads, analogous to the do-notation for monads. 
 		     .
@@ -62,5 +62,5 @@ library
                        template-haskell >= 2.7,
                        haskell-src-meta >= 0.5.1,
                        parsec >= 3,
-                       uniplate >= 1.6
+                       lens >= 3.0 && < 3.6
   hs-source-dirs:      src

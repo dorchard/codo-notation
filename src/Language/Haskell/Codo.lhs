@@ -8,9 +8,10 @@
 > import Text.Parsec.Char
 > import qualified Text.ParserCombinators.Parsec.Token as Token
 
-> import Data.Generics.Uniplate.Data
+> import Control.Lens
+> import Data.Data.Lens
 
-> import Language.Haskell.TH 
+> import Language.Haskell.TH
 > import Language.Haskell.TH.Syntax
 > import Language.Haskell.TH.Quote
 > import Language.Haskell.Meta.Parse
@@ -23,7 +24,7 @@
 
 > fv var = varE $ mkName var
 
-> -- Codo translation comprises a (1) parsing/textual-transformation phase 
+> -- Codo translation comprises a (1) parsing/textual-transformation phase
 > --                              (2) interpretation phase
 > --                                    i). top-level transformation
 > --                                    ii). bindings transformations
@@ -40,7 +41,7 @@
 >                      quoteDec = undefined }
 
 
-> interpretCodo s = do loc <- location                      
+> interpretCodo s = do loc <- location
 >                      let pos = (loc_filename loc,
 >                                   fst (loc_start loc),
 >                                   1) -- set to 1 as we add spaces in to account for
@@ -48,7 +49,7 @@
 >                      -- the following corrects the text to account for the preceding
 >                      -- Haskell code + quasiquote, to preserve alignment of further lines
 >                      s'' <- return ((take (snd (loc_start loc) - 1) (repeat ' ')) ++ s)
->                      s''' <- (doParse codoTransPart pos s'')                 
+>                      s''' <- (doParse codoTransPart pos s'')
 >                      case (parseExp s''') of
 >                             Left l -> error l
 >                             Right e -> codoMain e
@@ -69,11 +70,11 @@
 
 
 > -- Parsing a codo-block
-              
+
 > pattern  = (try ( do string "=>"
 >                      return "" )) <|>
 >                ( do p <- anyChar
->                     ps <- pattern 
+>                     ps <- pattern
 >                     return $ p:ps )
 
 
@@ -139,26 +140,26 @@
 > -- Binding interpretation (\vdash_c)
 
 > codoBind :: [Stmt] -> [Name] -> Q Exp
-> codoBind [NoBindS e]             vars = [| \gamma -> $(envProj vars (transformM (doToCodo) e)) gamma |]
-> codoBind [x]                     vars = error "Codo block must end with an expressions"      
+> codoBind [NoBindS e]             vars = [| \gamma -> $(envProj vars (transformMOf uniplate (doToCodo) e)) gamma |]
+> codoBind [x]                     vars = error "Codo block must end with an expressions"
 > codoBind ((NoBindS e):bs)        vars = [| $(codoBind bs vars) .
 >                                               (extend (\gamma ->
->                                                  ($(envProj vars (transformM (doToCodo) e)) gamma,
+>                                                  ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                   extract gamma))) |]
 
-> codoBind ((LetS [ValD p (NormalB e) []]):bs) vars = 
->                                           [| (\gamma -> 
+> codoBind ((LetS [ValD p (NormalB e) []]):bs) vars =
+>                                           [| (\gamma ->
 >                                                  $(letE [valD (return p)
->                                                   (normalB $ [| $(envProj vars (transformM (doToCodo) e)) gamma |]) []] [| $(codoBind bs vars) $(fv "gamma") |])) |]
+>                                                   (normalB $ [| $(envProj vars (transformMOf uniplate (doToCodo) e)) gamma |]) []] [| $(codoBind bs vars) $(fv "gamma") |])) |]
 
-> codoBind ((BindS (VarP v) e):bs) vars = [| $(codoBind bs (v:vars)) . 
+> codoBind ((BindS (VarP v) e):bs) vars = [| $(codoBind bs (v:vars)) .
 >                                            (extend (\gamma ->
->                                                       ($(envProj vars (transformM (doToCodo) e)) gamma,
+>                                                       ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                        extract gamma))) |]
 > codoBind ((BindS (TupP ps) e):bs) vars = [| $(codoBind bs ((concatMap patToVarPs ps) ++ vars)) .
 >                                            (extend (\gamma ->
->                                                      $(return $ convert (concatMap patToVarPs ps) vars)  
->                                                       ($(envProj vars (transformM (doToCodo) e)) gamma,
+>                                                      $(return $ convert (concatMap patToVarPs ps) vars)
+>                                                       ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                        extract gamma))) |]
 > codoBind t _ = error "Ill-formed codo bindings"
 
@@ -167,7 +168,7 @@
 >              -- Nested codo-block
 >              -- notably, doesn't pick up outside environment
 >              | showName n == "_reserved_codo_block_marker_" = codoMain (LamE [VarP v] (DoE stmts))
->                                   
+>
 >              | otherwise = return $ (DoE ((NoBindS (VarE n)):stmts))
 > doToCodo e  = return e
 
@@ -185,7 +186,7 @@
 
 > -- Creates a list of projections
 > projs :: [Name] -> ExpQ -> [DecQ]
-> projs x gam =  map (mkProj gam) (zip x [0..(length x - 1)]) 
+> projs x gam =  map (mkProj gam) (zip x [0..(length x - 1)])
 
 > -- Computes the correct projection
 > prj 0 = [| fst |]

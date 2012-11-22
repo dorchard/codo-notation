@@ -146,11 +146,6 @@
 >                                                  ($(envProj vars (transformM (doToCodo) e)) gamma,
 >                                                   extract gamma))) |]
 
-> codoBind ((LetS [ValD (VarP v) (NormalB e) []]):bs) vars = 
->                                           [| (\gamma -> 
->                                                  $(letE [valD (varP $ v)
->                                                   (normalB $ [| $(envProj vars (transformM (doToCodo) e)) gamma |]) []] [| $(codoBind bs vars) $(fv "gamma") |])) |]
-
 > codoBind ((LetS [ValD p (NormalB e) []]):bs) vars = 
 >                                           [| (\gamma -> 
 >                                                  $(letE [valD (return p)

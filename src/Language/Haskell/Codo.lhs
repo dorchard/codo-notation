@@ -151,6 +151,10 @@
 >                                                  $(letE [valD (varP $ v)
 >                                                   (normalB $ [| $(envProj vars (transformM (doToCodo) e)) gamma |]) []] [| $(codoBind bs vars) $(fv "gamma") |])) |]
 
+> codoBind ((LetS [ValD p (NormalB e) []]):bs) vars = 
+>                                           [| (\gamma -> 
+>                                                  $(letE [valD (return p)
+>                                                   (normalB $ [| $(envProj vars (transformM (doToCodo) e)) gamma |]) []] [| $(codoBind bs vars) $(fv "gamma") |])) |]
 
 > codoBind ((BindS (VarP v) e):bs) vars = [| $(codoBind bs (v:vars)) . 
 >                                            (extend (\gamma ->
@@ -161,7 +165,7 @@
 >                                                      $(return $ convert (concatMap patToVarPs ps) vars)  
 >                                                       ($(envProj vars (transformM (doToCodo) e)) gamma,
 >                                                        extract gamma))) |]
-> codoBind _ _ = error "Ill-formed codo bindings"
+> codoBind t _ = error "Ill-formed codo bindings"
 
 > doToCodo :: Exp -> Q Exp
 > doToCodo (LamE [VarP v] (DoE ((NoBindS (VarE n)):stmts)))

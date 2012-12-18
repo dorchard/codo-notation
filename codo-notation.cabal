@@ -1,5 +1,5 @@
 name:                codo-notation
-version:             0.6
+version:             0.7
 synopsis:            A notation for comonads, analogous to the do-notation for monads.
 description:         A notation for comonads, analogous to the do-notation for monads. 
 		     .
@@ -42,7 +42,7 @@ description:         A notation for comonads, analogous to the do-notation for m
 -- description:         
 license:             BSD3
 license-file:        LICENSE
-author:              Dominic Orchard <dom.orchard@gmail.com>
+author:              Dominic Orchard <dom.orchard@gmail.com> (with additions from Edward Kmett)
 maintainer:          Dominic Orchard <dom.orchard@gmail.com>
 stability:           experimental
 -- copyright:           

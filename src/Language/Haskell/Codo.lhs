@@ -1,7 +1,7 @@
 > {-# LANGUAGE TemplateHaskell #-}
 > {-# LANGUAGE NoMonomorphismRestriction #-}
 
-> module Language.Haskell.Codo(codo) where
+> module Language.Haskell.Codo(codo,coextendR) where -- coextendR is only exported at the moment for illustration purposes but later should be hidden
 
 > import Text.ParserCombinators.Parsec
 > import Text.ParserCombinators.Parsec.Expr
@@ -21,6 +21,23 @@
 > import Data.Char
 
 > import Control.Comonad
+
+Optimisation re-write rules - changes complexity from O(n^k) to O(n) for codo
+
+> {-# RULES "coextend/assoc" forall g f . coextendR (g . coextendR f) = coextendR g . coextendR f #-}
+
+> {-# RULES "coextend/cmap/assoc" forall h g f . coextendR ((g . coextendR f) . cmapR h) = coextendR g . coextendR f . cmapR h #-}
+
+For GHC rewriting to work it requires inlined-aliases to the
+core operations of the comonad
+
+> {-# INLINE cmapR #-}
+> cmapR :: Functor c => (a -> b) -> c a -> c b
+> cmapR = fmap
+
+> {-# INLINE coextendR #-}
+> coextendR :: Comonad c => (c a -> b) -> c a -> c b
+> coextendR = extend
 
 > fv var = varE $ mkName var
 
@@ -104,7 +121,7 @@
 
 > -- Top-level translation
 > codoMain :: Exp -> Q Exp
-> codoMain (LamE p bs) = [| $(codoMain' (LamE p bs)) . (fmap $(return $ projFun p)) |]
+> codoMain (LamE p bs) = [| $(codoMain' (LamE p bs)) . (cmapR $(return $ projFun p)) |]
 
 > codoMain' :: Exp -> Q Exp
 > codoMain' (LamE [TupP ps] (DoE stms)) = codoBind stms (concatMap patToVarPs ps)
@@ -143,7 +160,7 @@
 > codoBind [NoBindS e]             vars = [| \gamma -> $(envProj vars (transformMOf uniplate (doToCodo) e)) gamma |]
 > codoBind [x]                     vars = error "Codo block must end with an expressions"
 > codoBind ((NoBindS e):bs)        vars = [| $(codoBind bs vars) .
->                                               (extend (\gamma ->
+>                                               (coextendR (\gamma ->
 >                                                  ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                   extract gamma))) |]
 
@@ -153,11 +170,11 @@
 >                                                   (normalB $ [| $(envProj vars (transformMOf uniplate (doToCodo) e)) gamma |]) []] [| $(codoBind bs vars) $(fv "gamma") |])) |]
 
 > codoBind ((BindS (VarP v) e):bs) vars = [| $(codoBind bs (v:vars)) .
->                                            (extend (\gamma ->
+>                                            (coextendR (\gamma ->
 >                                                       ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                        extract gamma))) |]
 > codoBind ((BindS (TupP ps) e):bs) vars = [| $(codoBind bs ((concatMap patToVarPs ps) ++ vars)) .
->                                            (extend (\gamma ->
+>                                            (coextendR (\gamma ->
 >                                                      $(return $ convert (concatMap patToVarPs ps) vars)
 >                                                       ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                        extract gamma))) |]
@@ -182,7 +199,7 @@
 > envProj vars exp = let gam = mkName "gamma" in (lamE [varP gam] (letE (projs vars (varE gam)) exp))
 
 > -- Make a comonadic projection
-> mkProj gam (v, n) = valD (varP v) (normalB [| fmap $(prj n) $(gam) |]) []
+> mkProj gam (v, n) = valD (varP v) (normalB [| cmapR $(prj n) $(gam) |]) []
 
 > -- Creates a list of projections
 > projs :: [Name] -> ExpQ -> [DecQ]

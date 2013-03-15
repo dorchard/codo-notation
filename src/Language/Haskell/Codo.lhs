@@ -1,7 +1,7 @@
 > {-# LANGUAGE TemplateHaskell #-}
 > {-# LANGUAGE NoMonomorphismRestriction #-}
 
-> module Language.Haskell.Codo(codo,coextendR) where -- coextendR is only exported at the moment for illustration purposes but later should be hidden
+> module Language.Haskell.Codo(codo,context,coextendR) where -- coextendR is only exported at the moment for illustration purposes but later should be hidden
 
 > import Text.ParserCombinators.Parsec
 > import Text.ParserCombinators.Parsec.Expr
@@ -50,6 +50,8 @@ core operations of the comonad
 > -- *****************************
 > -- (1) Parsing/textual-transformation
 > -- *****************************
+
+> context = codo
 
 > codo :: QuasiQuoter
 > codo = QuasiQuoter { quoteExp = interpretCodo,
@@ -101,7 +103,7 @@ core operations of the comonad
 >                    return $ (take (length s1 - 4) (repeat ' '))
 >                               ++ "\\" ++ p ++ "-> do" ++ concat rest
 
-> codoTransPart' = try ( do string "codo"
+> codoTransPart' = try ( do string "codo" 
 >                           s1 <- many space
 >                           p <- pattern
 >                           s3 <- many space
@@ -141,6 +143,9 @@ core operations of the comonad
 > projExp [] = TupE []
 > projExp (x:xs) = TupE [x, (projExp xs)]
 
+> projPat [] = TupP []
+> projPat (x:xs) = TupP [x, (projPat xs)]
+
 > projFun p = LamE (map replaceWild p) (projExp (map VarE (concatMap patToVarPs p)))
 
 > replaceWild WildP = VarP $ mkName "_reserved_gamma_"
@@ -151,7 +156,7 @@ core operations of the comonad
 > -- **********************
 
 > convert lVars envVars = LamE [TupP [TupP (map VarP lVars),
->                                     TupP ((map VarP envVars) ++ [TupP []])]] (projExp (map VarE (lVars ++ envVars)))
+>                                     projPat (map VarP envVars)]] (projExp (map VarE (lVars ++ envVars)))
 
 > -- Note all these functions for making binders take a variable which is the "gamma" variable
 > -- Binding interpretation (\vdash_c)
@@ -175,7 +180,7 @@ core operations of the comonad
 >                                                        extract gamma))) |]
 > codoBind ((BindS (TupP ps) e):bs) vars = [| $(codoBind bs ((concatMap patToVarPs ps) ++ vars)) .
 >                                            (coextendR (\gamma ->
->                                                      $(return $ convert (concatMap patToVarPs ps) vars)
+>                                                      $(return $ convert (concatMap patToVarPs ps) vars)  
 >                                                       ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                        extract gamma))) |]
 > codoBind t _ = error "Ill-formed codo bindings"

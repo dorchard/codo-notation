@@ -1,8 +1,13 @@
 > {-# LANGUAGE TemplateHaskell #-}
 > {-# LANGUAGE QuasiQuotes #-}
 
+> {-# LANGUAGE NoMonomorphismRestriction #-}
+
 > import Control.Comonad
 > import Language.Haskell.Codo
+
+> import qualified Control.Category as Math
+
 
 > import Data.Array
 
@@ -95,15 +100,15 @@ Example array values
 >                  d = (plus b) <<= c
 >              in localMean1Db d
 
-> -- non-pointwise with codo
+> -- non-pointwise with context
 > prog2' = [codo| a => b <- localMean1Db a
 >                      (codo  b' => c <- laplace1Db b'
 >                                   d <- plus b c
 >                                   localMean1Db d) b  |]
 
-> prog3 = [codo| (x, y) => a <- laplace1Db x
->                          b <- laplace1Db y
->                          (extract a) + (extract b) |]
+> prog3 = [context| (x, y) => a <- laplace1Db x
+>                             b <- laplace1Db y
+>                             (extract a) + (extract b) |]
 
 prog3 <<= (czip (x, y))
 
@@ -113,6 +118,13 @@ prog3 <<= (czip (x, y))
 >             error "Cursor and boundaries must be the same for zipping"
 >         else let es'' = map (\i -> (i, (a!i, a'!i))) (indices a)
 >              in PBA (array (bounds a) es'') c (b1, b2)
+
+> instance (Eq i, Ix i) => ComonadZip (PArray i) where
+>     czip (PA a c, PA a' c') = 
+>         if (c/=c') then 
+>             error "Cursor and boundaries must be the same for zipping"
+>         else let es'' = map (\i -> (i, (a!i, a'!i))) (indices a)
+>              in PA (array (bounds a) es'') c
 
 
 --------------------
@@ -136,33 +148,33 @@ Other expermintation with abstractions on boundary testing
 > withExterior' (PBA a c (b1, b2)) (PBA a' _ _) = if (c>=b1 && c<b2) then a!c
 >                                                                    else a'!c
 
-> foo3 = [codo|  a => b <- laplace1Dc a
->                     b' <- b `withBoundary` a
->                     c <- localMean1Dc b'
->                     c' <- c `withBoundary` a
->                     d <- (extract b') `min` (extract c')
->                     filterC (<0.3) 0.3 d |]
+> foo3 = [context|  a => b <- laplace1Dc a
+>                        b' <- b `withBoundary` a
+>                        c <- localMean1Dc b'
+>                        c' <- c `withBoundary` a
+>                        d <- (extract b') `min` (extract c')
+>                        filterC (<0.3) 0.3 d |]
 
-> boo4 = [codo|  a => b <- laplace1Dc a
->                     b' <- b `withBoundary` a
->                     c <- localMean1Dc b'
->                     c' <- c `withBoundary` a
->                     d <- (extract b') `min` (extract c')
->                     w <- localMean1Dc d
->                     w `withBoundary` a |]
+> boo4 = [context|  a => b <- laplace1Dc a
+>                        b' <- b `withBoundary` a
+>                        c <- localMean1Dc b'
+>                        c' <- c `withBoundary` a
+>                        d <- (extract b') `min` (extract c')
+>                        w <- localMean1Dc d
+>                        w `withBoundary` a |]
 
-> boo4' = [codo|  a => b <- laplace1Dc a
->                      b' <- b `withExterior'` a
->                      c <- localMean1Dc b'
->                      c' <- c `withExterior'` a
->                      d <- (extract b') `min` (extract c')
->                      w <- localMean1Dc d
->                      w `withExterior'` a|]
+> boo4' = [context|  a => b <- laplace1Dc a
+>                         b' <- b `withExterior'` a
+>                         c <- localMean1Dc b'
+>                         c' <- c `withExterior'` a
+>                         d <- (extract b') `min` (extract c')
+>                         w <- localMean1Dc d
+>                         w `withExterior'` a|]
 
-> boo4'' = [codo|  a => b <- laplace1Dc `withExterior` extract $ a
->                       c <- localMean1Dc `withExterior` extract $ b
->                       d <- (extract b) `min` (extract c)
->                       localMean1Dc `withExterior` extract $ d |]
+> boo4'' = [context|  a => b <- laplace1Dc `withExterior` extract $ a
+>                          c <- localMean1Dc `withExterior` extract $ b
+>                          d <- (extract b) `min` (extract c)
+>                          localMean1Dc `withExterior` extract $ d |]
 
 
 
@@ -170,18 +182,20 @@ Other expermintation with abstractions on boundary testing
 
 
 > xa = PA (array (0,4) [(0, 3.0), (1, 0.5), (2, 0.7), (3, 0.5), (4, 0.0)]) (0::Int)
+> xb = PA (array (0,4) [(0, 5.4), (1, 1.5), (2, 3.4), (3, 4.5), (4, 4.0)]) (0::Int)
 
-> prog1a = [codo| x => y <- laplace1D x
->                      laplace1D y |]
+> prog1a = [context| x => y <- laplace1D x
+>                         laplace1D y |]
 
-> prog2a = [codo| x => y <- laplace1D x
->                      z <- (extract x) + (extract y)
->                      extract z |]
+> prog2a = [context| x => y <- laplace1D x
+>                         z <- (extract x) + (extract y)
+>                         extract z |]
 
-> prog3a = [codo| x => y <- laplace1D x
->                      z <- (extract x) + (extract y)
->                      laplace1D z |]
+> prog3a = [context| x => y <- laplace1D x
+>                         z <- (extract x) + (extract y)
+>                         laplace1D z |]
 
+---------------------
 
 > -- ==================== 2D arrays ==============
 
@@ -202,8 +216,36 @@ Other expermintation with abstractions on boundary testing
 > (?) :: (Ix i, Num a, Num i) => PArray i a -> i -> a
 > (PA a i) ? i' = if (inRange (bounds a) (i+i')) then a!(i+i') else 0
 
-> contours :: PArray (Int, Int) Float -> Float
-> contours = [codo| x => y  <- gauss2D x
->                        z  <- gauss2D y
->                        w  <- (extract y) - (extract z)
->                        laplace2D w |]
+> xx :: PArray (Int, Int) Double
+> xx = PA (array ((0,0), (2,2)) [((0, 0), 1), ((0, 1), 1), ((0, 2), 2),
+>                                ((1, 0), 1), ((1, 1), 2), ((1, 2), 3),
+>                                ((2, 0), 3), ((2, 1), 2), ((2, 2), 1)]) (0,0)
+
+> proj (PA arr _) = arr
+
+> getData (PA arr _) = assocs arr
+
+> contours :: PArray (Int, Int) Double -> Double
+> contours = [context| x => y  <- gauss2D x
+>                           z  <- gauss2D y
+>                           w  <- (extract y) - (extract z)
+>                           laplace2D w |]
+  
+> (^.) g f = g . extend f
+
+> minus x y = extract x - extract y
+
+> contours' = laplace2D
+>           ^. (\y' -> minus y' ^. gauss2D $ y')
+>           ^. gauss2D
+
+ contours_bad' = laplace2D
+                 ^. (minus 
+                 ^. gauss2D
+                 ^. gauss2D
+
+> foo1 = [context| (a, b) => minus a b |]
+
+> foo2 = [context| (a, b) => (a', b') <- extract $ czip (a, b)
+>                            minus a' b' |]
+

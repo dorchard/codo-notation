@@ -90,7 +90,7 @@ core operations of the comonad
 
 > -- Parsing a codo-block
 
-> pattern  = (try ( do string "=>"
+> pattern  = (try ( do string "=>" <|> string "⇒"
 >                      return "" )) <|>
 >                ( do p <- anyChar
 >                     ps <- pattern

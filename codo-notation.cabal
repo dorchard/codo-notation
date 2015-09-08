@@ -61,6 +61,7 @@ library
                        comonad >= 3,
                        template-haskell >= 2.7,
                        haskell-src-meta >= 0.5.1,
+                       haskell-src-exts >= 1.16,
                        parsec >= 3,
                        lens >= 3.0
   hs-source-dirs:      src

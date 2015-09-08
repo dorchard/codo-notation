@@ -14,7 +14,10 @@
 > import Language.Haskell.TH
 > import Language.Haskell.TH.Syntax
 > import Language.Haskell.TH.Quote
-> import Language.Haskell.Meta.Parse
+> import Language.Haskell.Meta.Parse hiding (parseExp)
+> import Language.Haskell.Meta.Syntax.Translate
+> import Language.Haskell.Exts.Parser hiding (parseExp)
+> import Language.Haskell.Exts.Extension
 
 > import Data.Maybe
 > import Debug.Trace
@@ -115,6 +118,32 @@ core operations of the comonad
 >                           if c=='_' then return "_reserved_gamma_"
 >                            else return [c] )
 
+> -- haskell-src-exts settings.
+
+> parseExp = either Left (Right . toExp)
+>            . parseResultToEither
+>            . parseExpWithMode codoParseMode
+>     where
+>       codoParseMode = ParseMode
+>         { parseFilename         = []
+>         , baseLanguage          = Haskell2010
+>         , extensions            = map EnableExtension languageExtensions
+>         , ignoreLinePragmas     = False
+>         , ignoreLanguagePragmas = False
+>         , fixities              = Nothing }
+>
+>       languageExtensions = [ PostfixOperators
+>                            , QuasiQuotes
+>                            , UnicodeSyntax
+>                            , PatternSignatures
+>                            , MagicHash
+>                            , ForeignFunctionInterface
+>                            , TemplateHaskell
+>                            , RankNTypes
+>                            , MultiParamTypeClasses
+>                            , RecursiveDo
+>                            , ViewPatterns ]
+
 > -- *****************************
 > -- (2) interpretation phase
 > -- *****************************
@@ -126,10 +155,10 @@ core operations of the comonad
 > codoMain (LamE p bs) = [| $(codoMain' (LamE p bs)) . (cmapR $(return $ projFun p)) |]
 
 > codoMain' :: Exp -> Q Exp
-> codoMain' (LamE [TupP ps] (DoE stms)) = codoBind stms (concatMap patToVarPs ps)
-> codoMain' (LamE [WildP] (DoE stms)) = codoBind stms [mkName "_reserved_gamma_"]
-> codoMain' (LamE [VarP v] (DoE stms)) = codoBind stms [v]
-> codoMain' _ = error codoPatternError
+> codoMain' (LamE [TupP ps] (DoE stms)) = codoBind stms (zip (ps >>= patToVarPs) (repeat Nothing))
+> codoMain' (LamE [WildP]   (DoE stms)) = codoBind stms [(mkName "_reserved_gamma_", Nothing)]
+> codoMain' (LamE [VarP v]  (DoE stms)) = codoBind stms [(v, Nothing)]
+> codoMain' _                           = error codoPatternError
 
 > codoPatternError = "Malformed codo: codo must start with either a variable, wildcard, or tuple pattern (of wildcards or variables)"
 
@@ -161,7 +190,9 @@ core operations of the comonad
 > -- Note all these functions for making binders take a variable which is the "gamma" variable
 > -- Binding interpretation (\vdash_c)
 
-> codoBind :: [Stmt] -> [Name] -> Q Exp
+> codoBind :: [Stmt]
+>          -> [(Name, Maybe ExpQ)]  -- ^ A mapping from names to associated view patterns.
+>          -> Q Exp
 > codoBind [NoBindS e]             vars = [| \gamma -> $(envProj vars (transformMOf uniplate (doToCodo) e)) gamma |]
 > codoBind [x]                     vars = error "Codo block must end with an expressions"
 > codoBind ((NoBindS e):bs)        vars = [| $(codoBind bs vars) .
@@ -169,19 +200,22 @@ core operations of the comonad
 >                                                  ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                   extract gamma))) |]
 
-> codoBind ((LetS [ValD p (NormalB e) []]):bs) vars =
+> codoBind ((LetS [ValD p (NormalB e) []]):bs) views =
 >                                           [| (\gamma ->
 >                                                  $(letE [valD (return p)
->                                                   (normalB $ [| $(envProj vars (transformMOf uniplate (doToCodo) e)) gamma |]) []] [| $(codoBind bs vars) $(fv "gamma") |])) |]
-
-> codoBind ((BindS (VarP v) e):bs) vars = [| $(codoBind bs (v:vars)) .
+>                                                   (normalB $ [| $(envProj views (transformMOf uniplate (doToCodo) e)) gamma |]) []] [| $(codoBind bs views) $(fv "gamma") |])) |]
+> codoBind ((BindS (VarP var) e):bs) views = [| $(codoBind bs ((var, Nothing) : views)) .
 >                                            (coextendR (\gamma ->
->                                                       ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
+>                                                       ($(envProj views (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                        extract gamma))) |]
-> codoBind ((BindS (TupP ps) e):bs) vars = [| $(codoBind bs ((concatMap patToVarPs ps) ++ vars)) .
+> codoBind ((BindS (ParensP (ViewP viewE (VarP var))) e):bs) views = [| $(codoBind bs ((var, Just (return viewE)) : views)) .
 >                                            (coextendR (\gamma ->
->                                                      $(return $ convert (concatMap patToVarPs ps) vars)  
->                                                       ($(envProj vars (transformMOf uniplate (doToCodo) e)) gamma,
+>                                                       ($(envProj views (transformMOf uniplate (doToCodo) e)) gamma,
+>                                                        extract gamma))) |]
+> codoBind ((BindS (TupP ps) e):bs) views = [| $(codoBind bs (zip (ps >>= patToVarPs) (repeat Nothing) ++ views)) .
+>                                            (coextendR (\gamma ->
+>                                                      $(return $ convert (concatMap patToVarPs ps) (map fst views))
+>                                                       ($(envProj views (transformMOf uniplate (doToCodo) e)) gamma,
 >                                                        extract gamma))) |]
 > codoBind t _ = error "Ill-formed codo bindings"
 
@@ -199,15 +233,21 @@ core operations of the comonad
 > --  iii). expression transformation
 > -- ***********************
 
-> -- Creates a scope where all the local variables are project
-> envProj :: [Name] -> ExpQ -> ExpQ
+> -- Creates a scope where all the local variables are projected and applied to
+> -- their associated view patterns.
+> envProj :: [(Name, Maybe ExpQ)]  -- ^ A mapping from names to associated view patterns.
+>         -> ExpQ
+>         -> ExpQ
 > envProj vars exp = let gam = mkName "gamma" in (lamE [varP gam] (letE (projs vars (varE gam)) exp))
 
 > -- Make a comonadic projection
-> mkProj gam (v, n) = valD (varP v) (normalB [| cmapR $(prj n) $(gam) |]) []
+> mkProj gam ((var,   Nothing), n) = valD                      (varP var)   (normalB [| cmapR $(prj n) $(gam) |]) []
+> mkProj gam ((var, Just view), n) = valD (parensP (viewP view (varP var))) (normalB [| cmapR $(prj n) $(gam) |]) []
 
 > -- Creates a list of projections
-> projs :: [Name] -> ExpQ -> [DecQ]
+> projs :: [(Name,Maybe ExpQ)]  -- ^ A mapping from names to associated view patterns.
+>       -> ExpQ
+>       -> [DecQ]
 > projs x gam =  map (mkProj gam) (zip x [0..(length x - 1)])
 
 > -- Computes the correct projection
